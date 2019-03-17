@@ -144,11 +144,11 @@ void SVD(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
 
     for (int i=0; i<N; i++) {
         int newIndex = 0;
-        float current = *(diPlus1+i*N+i);
+        float current = fabs(*(diPlus1+i*N+i));
 
         // calculate index
         for (int j=0; j<N; j++) {
-            float other = *(diPlus1+j*N+j);
+            float other = fabs(*(diPlus1+j*N+j));
             if (other>current) {
                 newIndex++;
             } else if (other==current) {
@@ -163,11 +163,12 @@ void SVD(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
             *(*(V_T)+newIndex*N+j) = *(eiPlus1+j*N+newIndex);
             *(v+j*N+newIndex) = *(eiPlus1+j*N+newIndex);
             if (j==newIndex) {
-                *(sigmaInv+newIndex*N+newIndex) = 1.0/current;
-                *(*(SIGMA)+newIndex*N+newIndex) = current;
+                *(sigmaInv+newIndex*N+newIndex) = 1.0/sqrt(current);
+                // *(*(SIGMA)+newIndex*N+newIndex) = current;
+                *(*(SIGMA)+newIndex) = sqrt(current);
             } else {
                 *(sigmaInv+j*N+newIndex) = 0.0;
-                *(*(SIGMA)+j*N+newIndex) = 0.0;
+                // *(*(SIGMA)+j*N+newIndex) = 0.0;
             }
         }
     }
