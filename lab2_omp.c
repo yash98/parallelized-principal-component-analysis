@@ -72,7 +72,8 @@ void SVD(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
     // Eigen value and vectors
     float* qi = (float*) malloc(sizeof(float)*N*N);
     float* ri = (float*) malloc(sizeof(float)*N*N);
-    float* di_even =(float*) malloc(sizeof(float)*N*N);
+    // float* di_even =(float*) malloc(sizeof(float)*N*N);
+    float* di_even = DT_D;
     float* di_odd = (float*) malloc(sizeof(float)*N*N);
     float* ei_even = (float*) malloc(sizeof(float)*N*N);
     float* ei_odd = (float*) malloc(sizeof(float)*N*N);
@@ -85,7 +86,7 @@ void SVD(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
             } else {
                 *(ei_even+i*N+j) = 0.0;
             }
-            *(di_even+i*N+j) = *(DT_D+i*N+j);
+            // *(di_even+i*N+j) = *(DT_D+i*N+j);
         }
     }
 
@@ -127,7 +128,8 @@ void SVD(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
         *errorIplus1 = 0.0;
         for (int i=0; i<N; i++) {
             for (int j=0; j<N; j++) {
-                float diff = *(diPlus1+i*N+j) - *(DT_D+i*N+j);
+                // float diff = *(diPlus1+i*N+j) - *(DT_D+i*N+j);
+                float diff = *(diPlus1+i*N+j) - *(di+i*N+j);
                 *errorIplus1 += diff*diff;
             }
         }
@@ -138,48 +140,53 @@ void SVD(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
     }
 
     float* sigmaInv = (float*) malloc(sizeof(float)*N*N);
+    float* v = (float*) malloc(sizeof(float)*N*N);
 
     for (int i=0; i<N; i++) {
+        int newIndex = 0;
+        float current = *(diPlus1+i*N+i);
+
+        // calculate index
         for (int j=0; j<N; j++) {
-            // VT
-            *(*(V_T)+i*N+j) = *(diPlus1+j*N+i);
-
-            // sigma & sigmaInv
-            if (i==j) {
-                int newIndex = 0;
-                int sameValNum = 0;
-                float current = *(eiPlus1+i*N+i);
-                
-                // calculate index to sort
-                for (int k=0; k<N; k++) {
-                    float other = *(eiPlus1+i*N+i);
-                    if (other>current) {
-                        newIndex++;
-                    } else if (other==current) {
-                        sameValNum++;
-                    }
+            float other = *(diPlus1+j*N+j);
+            if (other>current) {
+                newIndex++;
+            } else if (other==current) {
+                if (i<j) {
+                    newIndex++;
                 }
+            }
+        }
 
-                // paste sorted value
-                for (int k=newIndex; k<newIndex+sameValNum; k++) {
-                    *(sigmaInv+k*N+k) = 1.0/current;
-                    *(*(SIGMA)+k*N+k) = current;
-                }
+        // paste according to index
+        for (int j=0; j<N; j++) {
+            *(*(V_T)+newIndex*N+j) = *(eiPlus1+j*N+newIndex);
+            *(v+j*N+newIndex) = *(eiPlus1+j*N+newIndex);
+            if (j==newIndex) {
+                *(sigmaInv+newIndex*N+newIndex) = 1.0/current;
+                *(*(SIGMA)+newIndex*N+newIndex) = current;
             } else {
-                *(sigmaInv+i*N+j) = 0.0;
-                *(*(SIGMA)+i*N+j) = 0.0;
+                *(sigmaInv+j*N+newIndex) = 0.0;
+                *(*(SIGMA)+j*N+newIndex) = 0.0;
             }
         }
     }
 
+    float* mv = (float*) malloc(sizeof(float)*M*N);
+
+    matmul(D, v, mv, M, N, N);
+    matmul(mv, sigmaInv, *U, M, N, N);
+
     free(DT_D);
-    free(di_even);
+    // free(di_even);
     free(di_odd);
     free(qi);
     free(ri);
     free(ei_odd);
     free(ei_even);
     free(sigmaInv);
+    free(v);
+    free(mv);
 }
 
 void PCA(int retention, int M, int N, float* D, float* U, float* SIGMA, float** D_HAT, int *K)
