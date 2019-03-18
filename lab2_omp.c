@@ -2,6 +2,20 @@
 #include <omp.h>
 #include <math.h>
 
+void printMat(float* mat, int m, int n) {
+    // mat is mxn
+    for (int i=0; i<m; i++) {
+        for (int j=0; j<n; j++) {
+            printf("%f", (*(mat+i*n+j)));
+            if (j==n-1) {
+                printf("\n");
+            } else {
+                printf(", ");
+            }
+        }
+    }
+}
+
 float subtractProjOnUnitVecFromRes(float* result, float* unitVec, float* generalVec, int m, int n) {
     float dotProdRes = 0.0;
     // dotproduct
@@ -17,11 +31,15 @@ float subtractProjOnUnitVecFromRes(float* result, float* unitVec, float* general
 }
 
 void QRfactors(float* d, float* q, float* r, int m, int n) {
+    // printf("d\n");
+    // printMat(d, m, n);
     for (int i=0; i<n; i++) {
         // copy ai to ei
         for (int j=0; j<m; j++) {
             *(q+j*n+i) = *(d+j*n+i);
         }
+        // printf("q\n");
+        // printMat(q, m, n);
 
         // subtract previous direction components to make orthogonal 
         for (int j=0; j<n; j++) {
@@ -31,6 +49,8 @@ void QRfactors(float* d, float* q, float* r, int m, int n) {
             } else {
                 *(r+j*n+i) = 0.0;
             }
+            // printf("q\n");
+            // printMat(q, m, n);
         }
 
         // normalize
@@ -39,7 +59,17 @@ void QRfactors(float* d, float* q, float* r, int m, int n) {
             norm += (*(q+j*n+i))*(*(q+j*n+i));
         }
         norm = sqrt(norm);
+
         *(r+i*n+i) = norm;
+
+        for (int j=0; j<m; j++) {
+            *(q+j*n+i) /= norm;
+        }
+
+        // printf("q\n");
+        // printMat(q, m, n);
+        // printf("r\n");
+        // printMat(r, n, n);
     }
 }
 
@@ -57,7 +87,9 @@ void matmul(float* a, float* b, float*c, int l, int m, int n) {
 
 void SVD(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
 {
-    float* DT_D = (float*) malloc(sizeof(float)*N*N);
+    // float* DT_D = (float*) malloc(sizeof(float)*N*N);
+    float DT_D_arr[N*N];
+    float* DT_D = DT_D_arr;
     
     // MT*M
     for (int i=0; i<N; i++) {
@@ -68,15 +100,31 @@ void SVD(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
             }
         }
     }
+    printf("DT_D\n");
+    printMat(DT_D, N, N);
 
     // Eigen value and vectors
-    float* qi = (float*) malloc(sizeof(float)*N*N);
-    float* ri = (float*) malloc(sizeof(float)*N*N);
+    // float* qi = (float*) malloc(sizeof(float)*N*N);
+    // float* ri = (float*) malloc(sizeof(float)*N*N);
+    // // float* di_even =(float*) malloc(sizeof(float)*N*N);
+    // float* di_even = DT_D;
+    // float* di_odd = (float*) malloc(sizeof(float)*N*N);
+    // float* ei_even = (float*) malloc(sizeof(float)*N*N);
+    // float* ei_odd = (float*) malloc(sizeof(float)*N*N);
+
+    float qi_arr[N*N];
+    float ri_arr[N*N];
+    float di_odd_arr[N*N];
+    float ei_even_arr[N*N];
+    float ei_odd_arr[N*N];
+
+    float* qi = qi_arr;
+    float* ri = ri_arr;
     // float* di_even =(float*) malloc(sizeof(float)*N*N);
     float* di_even = DT_D;
-    float* di_odd = (float*) malloc(sizeof(float)*N*N);
-    float* ei_even = (float*) malloc(sizeof(float)*N*N);
-    float* ei_odd = (float*) malloc(sizeof(float)*N*N);
+    float* di_odd = di_odd_arr;
+    float* ei_even = ei_even_arr;
+    float* ei_odd = ei_odd_arr;
 
     // init D0 & E0
     for (int i=0; i<N; i++) {
@@ -123,6 +171,14 @@ void SVD(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
         QRfactors(di, qi, ri, N, N);
         matmul(ri, qi, diPlus1, N, N, N);
         matmul(ei, qi, eiPlus1, N, N, N);
+        // printf("q%d\n", numIter);
+        // printMat(qi, N, N);
+        // printf("r%d\n", numIter);
+        // printMat(ri, N, N);
+        // printf("e%d\n", numIter+1);
+        // printMat(eiPlus1, N, N);
+        // printf("d%d\n", numIter+1);
+        // printMat(diPlus1, N, N);
 
         // Di+1 - D error stops decreasing
         *errorIplus1 = 0.0;
@@ -133,14 +189,22 @@ void SVD(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
                 *errorIplus1 += diff*diff;
             }
         }
-        if (errorI<=errorIplus1) {
+        if (*errorI<=*errorIplus1) {
             break;
         }
         numIter++;
     }
+    printf("Dinf\n");
+    printMat(diPlus1, N, N);
+    printf("Einf\n");
+    printMat(eiPlus1, N, N);
 
-    float* sigmaInv = (float*) malloc(sizeof(float)*N*N);
-    float* v = (float*) malloc(sizeof(float)*N*N);
+    // float* sigmaInv = (float*) malloc(sizeof(float)*N*N);
+    // float* v = (float*) malloc(sizeof(float)*N*N);
+    float sigmaInv_arr[N*N];
+    float v_arr[N*N];
+    float* sigmaInv = sigmaInv_arr;
+    float* v = v_arr;
 
     for (int i=0; i<N; i++) {
         int newIndex = 0;
@@ -173,21 +237,31 @@ void SVD(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
         }
     }
 
-    float* mv = (float*) malloc(sizeof(float)*M*N);
+    printf("V\n");
+    printMat(v, N, N);
+    printf("sigma\n");
+    printMat(*SIGMA, N, 1);
+
+    // float* mv = (float*) malloc(sizeof(float)*M*N);
+    float mv_arr[M*N];
+    float* mv = mv_arr;
 
     matmul(D, v, mv, M, N, N);
     matmul(mv, sigmaInv, *U, M, N, N);
 
-    free(DT_D);
-    // free(di_even);
-    free(di_odd);
-    free(qi);
-    free(ri);
-    free(ei_odd);
-    free(ei_even);
-    free(sigmaInv);
-    free(v);
-    free(mv);
+    // printf("U\n");
+    // printMat(*U, M, N);
+
+    // free(DT_D);
+    // // free(di_even);
+    // free(di_odd);
+    // free(qi);
+    // free(ri);
+    // free(ei_odd);
+    // free(ei_even);
+    // free(sigmaInv);
+    // free(v);
+    // free(mv);
 }
 
 void PCA(int retention, int M, int N, float* D, float* U, float* SIGMA, float** D_HAT, int *K)
