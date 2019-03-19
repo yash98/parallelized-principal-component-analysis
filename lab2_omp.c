@@ -2,6 +2,10 @@
 #include <omp.h>
 #include <math.h>
 
+static float D_HAT_ARR[200000000];
+static float U_arr[200000000];
+static float VT_arr[200000000];
+
 void printMat(float* mat, int m, int n) {
     // mat is mxn
     for (int i=0; i<m; i++) {
@@ -85,7 +89,16 @@ void matmul(float* a, float* b, float*c, int l, int m, int n) {
     }
 }
 
-void SVD(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
+void transpose(float* a, float* b, int m, int n) {
+    // a = bT, a is mxn
+    for (int i=0; i<m; i++) {
+        for (int j=0; j<n; j++) {
+            *(a+i*n+j) = *(b+j*m+i);
+        }
+    }
+}
+
+void SVD_internal(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
 {
     // float* DT_D = (float*) malloc(sizeof(float)*N*N);
     float DT_D_arr[N*N];
@@ -114,13 +127,14 @@ void SVD(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
 
     float qi_arr[N*N];
     float ri_arr[N*N];
+    // float di_even_arr[N*N];
     float di_odd_arr[N*N];
     float ei_even_arr[N*N];
     float ei_odd_arr[N*N];
 
     float* qi = qi_arr;
     float* ri = ri_arr;
-    // float* di_even =(float*) malloc(sizeof(float)*N*N);
+    // float* di_even = di_even_arr;
     float* di_even = DT_D;
     float* di_odd = di_odd_arr;
     float* ei_even = ei_even_arr;
@@ -201,7 +215,7 @@ void SVD(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
 
     // float* sigmaInv = (float*) malloc(sizeof(float)*N*N);
     // float* v = (float*) malloc(sizeof(float)*N*N);
-    float sigmaInv_arr[N*N];
+    float sigmaInv_arr[N*M];
     float v_arr[N*N];
     float* sigmaInv = sigmaInv_arr;
     float* v = v_arr;
@@ -227,20 +241,28 @@ void SVD(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
             *(*(V_T)+newIndex*N+j) = *(eiPlus1+j*N+newIndex);
             *(v+j*N+newIndex) = *(eiPlus1+j*N+newIndex);
             if (j==newIndex) {
-                *(sigmaInv+newIndex*N+newIndex) = 1.0/sqrt(current);
+                *(sigmaInv+newIndex*M+newIndex) = 1.0/sqrt(current);
                 // *(*(SIGMA)+newIndex*N+newIndex) = current;
                 *(*(SIGMA)+newIndex) = sqrt(current);
             } else {
-                *(sigmaInv+j*N+newIndex) = 0.0;
+                *(sigmaInv+j*M+newIndex) = 0.0;
                 // *(*(SIGMA)+j*N+newIndex) = 0.0;
             }
+        }
+    }
+
+    for (int i=0; i<N; i++) {
+        for (int j=N; j<M; j++) {
+            *(sigmaInv+i*M+j) = 0.0;
         }
     }
 
     printf("V\n");
     printMat(v, N, N);
     printf("sigma\n");
-    printMat(*SIGMA, N, 1);
+    printMat(*SIGMA, 1, N);
+    printf("sigmaInv\n");
+    printMat(sigmaInv, N, M);
 
     // float* mv = (float*) malloc(sizeof(float)*M*N);
     float mv_arr[M*N];
@@ -249,8 +271,10 @@ void SVD(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
     matmul(D, v, mv, M, N, N);
     matmul(mv, sigmaInv, *U, M, N, N);
 
-    // printf("U\n");
-    // printMat(*U, M, N);
+    // printf("sigma\n");
+    // printMat(*SIGMA, 1, N);
+    printf("U\n");
+    printMat(*U, M, M);
 
     // free(DT_D);
     // // free(di_even);
@@ -264,7 +288,46 @@ void SVD(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
     // free(mv);
 }
 
+void SVD(int M, int N, float* D, float** U, float** SIGMA, float** V_T) {
+    float* U1 = U_arr;
+    float* VT1 = VT_arr;
+    SVD_internal(M, N, D, &U1, SIGMA, &VT1);
+    // U = (VT1)T, V_T = (U1)T
+    transpose(*U, VT1, N, N);
+    transpose(*V_T, U1, M, M);
+}
+
 void PCA(int retention, int M, int N, float* D, float* U, float* SIGMA, float** D_HAT, int *K)
 {
-    
+    printf("SIGMA\n");
+    printMat(SIGMA, 1, N);
+
+    float totalEigenSum = 0.0;
+    for (int i=0; i<N; i++) {
+        totalEigenSum += *(SIGMA+i);
+    }
+
+    float eigenSum = 0.0;
+    for (*K=0; *K<N; (*K)++) {
+        eigenSum += *(SIGMA+(*K));
+        float percent = eigenSum/totalEigenSum;
+        if (percent >= retention/100.0) {
+            (*K)++;
+            break;
+        }
+    }
+
+    // float* D_HAT_TEMP = (float*) calloc(M*(*K), sizeof(float));
+    // float* D_HAT_TEMP = (float*) malloc(sizeof(float)*M*(*K));
+    float* D_HAT_TEMP = D_HAT_ARR;
+
+    for (int i=0; i<M; i++) {
+        for (int j=0; j<(*K); j++) {
+            *(D_HAT_TEMP+i*(*K)+j) = *(D+i*N+j);
+        }
+    }
+
+    *D_HAT = D_HAT_TEMP;
+    printf("D_HAT\n");
+    printMat(*D_HAT, M, *K);
 }
