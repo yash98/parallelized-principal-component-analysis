@@ -323,7 +323,10 @@ void PCA(int retention, int M, int N, float* D, float* U, float* SIGMA, float** 
 
     for (int i=0; i<M; i++) {
         for (int j=0; j<(*K); j++) {
-            *(D_HAT_TEMP+i*(*K)+j) = *(D+i*N+j);
+            *(D_HAT_TEMP+i*(*K)+j) = 0.0;
+            for (int k=0; k<N; k++) {
+                *(D_HAT_TEMP+i*(*K)+j) += (*(D+i*N+k))*(*(U+k*N+j));
+            }
         }
     }
 
