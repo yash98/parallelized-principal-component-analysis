@@ -2,6 +2,7 @@
 pca
 pcag
 .vscode
+testcase_*
 
 # Prerequisites
 *.d

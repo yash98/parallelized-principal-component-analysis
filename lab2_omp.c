@@ -2,9 +2,12 @@
 #include <omp.h>
 #include <math.h>
 
-static float D_HAT_ARR[200000000];
-static float U_arr[200000000];
-static float VT_arr[200000000];
+static float D_HAT_ARR[100000000];
+static float U_arr[100000000];
+static float VT_arr[100000000];
+
+static float check_D[100000000];
+static float check_usig[100000000];
 
 void printMat(float* mat, int m, int n) {
     // mat is mxn
@@ -35,8 +38,6 @@ float subtractProjOnUnitVecFromRes(float* result, float* unitVec, float* general
 }
 
 void QRfactors(float* d, float* q, float* r, int m, int n) {
-    // printf("d\n");
-    // printMat(d, m, n);
     for (int i=0; i<n; i++) {
         // copy ai to ei
         for (int j=0; j<m; j++) {
@@ -69,11 +70,6 @@ void QRfactors(float* d, float* q, float* r, int m, int n) {
         for (int j=0; j<m; j++) {
             *(q+j*n+i) /= norm;
         }
-
-        // printf("q\n");
-        // printMat(q, m, n);
-        // printf("r\n");
-        // printMat(r, n, n);
     }
 }
 
@@ -153,8 +149,9 @@ void SVD_internal(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
     }
 
     int numIter = 0;
-    float error_even = 1000000000.0;
-    float error_odd = 0.0;
+    // float error_even = 1000000000.0;
+    // float error_odd = 0.0;
+    float error =0.0;
 
     float* di;
     float* diPlus1;
@@ -170,15 +167,17 @@ void SVD_internal(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
             diPlus1 = di_odd;
             ei = ei_even;
             eiPlus1 = ei_odd;
-            errorI = &error_even;
-            errorIplus1 = &error_odd;
+            // errorI = &error_even;
+            // errorIplus1 = &error_odd;
+            errorIplus1 = &error;
         } else {
             di = di_odd;
             diPlus1 = di_even;
             ei = ei_odd;
             eiPlus1 = ei_even;
-            errorI = &error_odd;
-            errorIplus1 = &error_even;
+            // errorI = &error_odd;
+            // errorIplus1 = &error_even;
+            errorIplus1 = &error;
         }
 
         // all necessary calculation
@@ -201,13 +200,18 @@ void SVD_internal(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
                 // float diff = *(diPlus1+i*N+j) - *(DT_D+i*N+j);
                 float diff = *(diPlus1+i*N+j) - *(di+i*N+j);
                 *errorIplus1 += diff*diff;
+                // *errorIplus1 += diff;
+                diff = *(eiPlus1+i*N+j) - *(ei+i*N+j);
+                *errorIplus1 += diff*diff;
             }
         }
-        if (*errorI<=*errorIplus1) {
+        numIter++;
+        // if (*errorI<=*errorIplus1) {
+        if (*errorIplus1<=0.00001) {
             break;
         }
-        numIter++;
     }
+    printf("numIteration:%d\n", numIter);
     printf("Dinf\n");
     printMat(diPlus1, N, N);
     printf("Einf\n");
@@ -215,6 +219,9 @@ void SVD_internal(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
 
     // float* sigmaInv = (float*) malloc(sizeof(float)*N*N);
     // float* v = (float*) malloc(sizeof(float)*N*N);
+    float sigmaArr[M*N];
+    float* sigmaPtr = sigmaArr;
+
     float sigmaInv_arr[N*M];
     float v_arr[N*N];
     float* sigmaInv = sigmaInv_arr;
@@ -243,10 +250,12 @@ void SVD_internal(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
             if (j==newIndex) {
                 *(sigmaInv+newIndex*M+newIndex) = 1.0/sqrt(current);
                 // *(*(SIGMA)+newIndex*N+newIndex) = current;
+                *(sigmaPtr+newIndex*N+newIndex) = sqrt(current);
                 *(*(SIGMA)+newIndex) = sqrt(current);
             } else {
                 *(sigmaInv+j*M+newIndex) = 0.0;
                 // *(*(SIGMA)+j*N+newIndex) = 0.0;
+                *(sigmaPtr+j*N+newIndex) = 0.0;
             }
         }
     }
@@ -254,13 +263,18 @@ void SVD_internal(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
     for (int i=0; i<N; i++) {
         for (int j=N; j<M; j++) {
             *(sigmaInv+i*M+j) = 0.0;
+            *(sigmaPtr+j*N+i) = 0.0;
         }
     }
 
     printf("V\n");
     printMat(v, N, N);
-    printf("sigma\n");
+    printf("V_T\n");
+    printMat(*V_T, N, N);
+    printf("SIGMA\n");
     printMat(*SIGMA, 1, N);
+    printf("sigma\n");
+    printMat(sigmaPtr, M, N);
     printf("sigmaInv\n");
     printMat(sigmaInv, N, M);
 
@@ -269,12 +283,32 @@ void SVD_internal(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
     float* mv = mv_arr;
 
     matmul(D, v, mv, M, N, N);
-    matmul(mv, sigmaInv, *U, M, N, N);
+    matmul(mv, sigmaInv, *U, M, N, M);
 
     // printf("sigma\n");
     // printMat(*SIGMA, 1, N);
     printf("U\n");
     printMat(*U, M, M);
+
+    // checking
+    float* checkD = check_D;
+    float* checkUSig = check_usig;
+
+    matmul(*U, sigmaPtr, checkUSig, M, M, N);
+    matmul(checkUSig, *V_T, checkD, M, N, N);
+    printf("checkUSig\n");
+    printMat(checkUSig, M, N);
+    printf("checkD\n");
+    printMat(checkD, M, N);
+
+    float checkError = 0.0;
+    for (int i=0; i<M; i++) {
+        for (int j=0; j<N; j++) {
+            float diff = (*(D+i*N+j))-(*(checkD+i*N+j));
+            checkError += diff*diff;
+        }
+    }
+    printf("checkError=%f\n", checkError);
 
     // free(DT_D);
     // // free(di_even);
@@ -299,9 +333,6 @@ void SVD(int M, int N, float* D, float** U, float** SIGMA, float** V_T) {
 
 void PCA(int retention, int M, int N, float* D, float* U, float* SIGMA, float** D_HAT, int *K)
 {
-    printf("SIGMA\n");
-    printMat(SIGMA, 1, N);
-
     float totalEigenSum = 0.0;
     for (int i=0; i<N; i++) {
         totalEigenSum += *(SIGMA+i);
@@ -321,6 +352,7 @@ void PCA(int retention, int M, int N, float* D, float* U, float* SIGMA, float** 
     // float* D_HAT_TEMP = (float*) malloc(sizeof(float)*M*(*K));
     float* D_HAT_TEMP = D_HAT_ARR;
 
+    // D_HAT = D*W, W = U[:*K]
     for (int i=0; i<M; i++) {
         for (int j=0; j<(*K); j++) {
             *(D_HAT_TEMP+i*(*K)+j) = 0.0;
@@ -331,6 +363,7 @@ void PCA(int retention, int M, int N, float* D, float* U, float* SIGMA, float** 
     }
 
     *D_HAT = D_HAT_TEMP;
+    printf("K=%d\n", *K);
     printf("D_HAT\n");
     printMat(*D_HAT, M, *K);
 }
