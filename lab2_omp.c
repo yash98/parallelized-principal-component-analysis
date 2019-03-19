@@ -1,13 +1,40 @@
 #include <malloc.h>
 #include <omp.h>
 #include <math.h>
+#include <unistd.h>
 
-static float D_HAT_ARR[100000000];
-static float U_arr[100000000];
-static float VT_arr[100000000];
+// static float D_HAT_ARR[150000000];
+// static float U_arr[150000000];
+// static float VT_arr[150000000];
+static int cacheLineSize;
 
-static float check_D[100000000];
-static float check_usig[100000000];
+// static float check_D[100000000];
+// static float check_usig[100000000];
+
+int gcd(int a, int b) {
+    while (1) {
+        // Everything divides 0  
+        if (a == 0) 
+            return b; 
+        if (b == 0) 
+            return a; 
+
+        // base case 
+        if (a == b) 
+            return a; 
+
+        // a is greater 
+        if (a > b) {
+            a = a%b;
+        } else {
+            b = b%a;
+        }
+    }
+}
+
+int lcm(int a, int b) {
+    return (a*b)/gcd(a, b);
+}
 
 void printMat(float* mat, int m, int n) {
     // mat is mxn
@@ -75,14 +102,26 @@ void QRfactors(float* d, float* q, float* r, int m, int n) {
 
 void matmul(float* a, float* b, float*c, int l, int m, int n) {
     // c = a*b, a is lxm, b is mxn, cis lxn
+    int chunk = lcm(cacheLineSize, n)/n;
+    // #pragma omp parallel
+    // {
+    // int defaultChunk = l*n/omp_get_num_threads();
+    // if (chunk>defaultChunk) {
+    //     chunk = defaultChunk;
+    // }
+    #pragma omp parallel for schedule(static, chunk)
     for (int i=0; i<l; i++) {
         for (int j=0; j<n; j++) {
-            *(c+i*n+j) = 0.0;
+            // *(c+i*n+j) = 0.0;
+            float prod = 0.0;
             for (int k=0; k<m; k++) {
-                *(c+i*n+j) += (*(a+i*m+k))*(*(b+k*n+j));
+                // *(c+i*n+j) += (*(a+i*m+k))*(*(b+k*n+j));
+                prod += (*(a+i*m+k))*(*(b+k*n+j));
             }
+            *(c+i*n+j) = prod;
         }
     }
+    // }
 }
 
 void transpose(float* a, float* b, int m, int n) {
@@ -96,21 +135,28 @@ void transpose(float* a, float* b, int m, int n) {
 
 void SVD_internal(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
 {
+    cacheLineSize = (int) ceil((double) sysconf(_SC_LEVEL1_DCACHE_LINESIZE))/((double)(sizeof(float)));
     // float* DT_D = (float*) malloc(sizeof(float)*N*N);
     float DT_D_arr[N*N];
     float* DT_D = DT_D_arr;
     
     // MT*M
+
+    int chunk = lcm(cacheLineSize, N)/N;
+    #pragma omp for schedule(static, chunk)
     for (int i=0; i<N; i++) {
         for (int j=0; j<N; j++) {
-           *(DT_D+i*N+j) = 0;
+            // *(DT_D+i*N+j) = 0;
+            float prod = 0.0;
             for (int k=0; k<M; k++) {
-                *(DT_D+i*N+j) += (*(D+k*N+i))*(*(D+k*N+j));
+                // *(DT_D+i*N+j) += (*(D+k*N+i))*(*(D+k*N+j));
+                prod += (*(D+k*N+i))*(*(D+k*N+j));
             }
+            *(DT_D+i*N+j) = prod;
         }
     }
-    printf("DT_D\n");
-    printMat(DT_D, N, N);
+    // printf("DT_D\n");
+    // printMat(DT_D, N, N);
 
     // Eigen value and vectors
     // float* qi = (float*) malloc(sizeof(float)*N*N);
@@ -211,11 +257,11 @@ void SVD_internal(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
             break;
         }
     }
-    printf("numIteration:%d\n", numIter);
-    printf("Dinf\n");
-    printMat(diPlus1, N, N);
-    printf("Einf\n");
-    printMat(eiPlus1, N, N);
+    // printf("numIteration:%d\n", numIter);
+    // printf("Dinf\n");
+    // printMat(diPlus1, N, N);
+    // printf("Einf\n");
+    // printMat(eiPlus1, N, N);
 
     // float* sigmaInv = (float*) malloc(sizeof(float)*N*N);
     // float* v = (float*) malloc(sizeof(float)*N*N);
@@ -267,16 +313,16 @@ void SVD_internal(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
         }
     }
 
-    printf("V\n");
-    printMat(v, N, N);
-    printf("V_T\n");
-    printMat(*V_T, N, N);
-    printf("SIGMA\n");
-    printMat(*SIGMA, 1, N);
-    printf("sigma\n");
-    printMat(sigmaPtr, M, N);
-    printf("sigmaInv\n");
-    printMat(sigmaInv, N, M);
+    // printf("V\n");
+    // printMat(v, N, N);
+    // printf("V_T\n");
+    // printMat(*V_T, N, N);
+    // printf("SIGMA\n");
+    // printMat(*SIGMA, 1, N);
+    // printf("sigma\n");
+    // printMat(sigmaPtr, M, N);
+    // printf("sigmaInv\n");
+    // printMat(sigmaInv, N, M);
 
     // float* mv = (float*) malloc(sizeof(float)*M*N);
     float mv_arr[M*N];
@@ -287,28 +333,28 @@ void SVD_internal(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
 
     // printf("sigma\n");
     // printMat(*SIGMA, 1, N);
-    printf("U\n");
-    printMat(*U, M, M);
+    // printf("U\n");
+    // printMat(*U, M, M);
 
     // checking
-    float* checkD = check_D;
-    float* checkUSig = check_usig;
+    // float* checkD = check_D;
+    // float* checkUSig = check_usig;
 
-    matmul(*U, sigmaPtr, checkUSig, M, M, N);
-    matmul(checkUSig, *V_T, checkD, M, N, N);
-    printf("checkUSig\n");
-    printMat(checkUSig, M, N);
-    printf("checkD\n");
-    printMat(checkD, M, N);
+    // matmul(*U, sigmaPtr, checkUSig, M, M, N);
+    // matmul(checkUSig, *V_T, checkD, M, N, N);
+    // printf("checkUSig\n");
+    // printMat(checkUSig, M, N);
+    // printf("checkD\n");
+    // printMat(checkD, M, N);
 
-    float checkError = 0.0;
-    for (int i=0; i<M; i++) {
-        for (int j=0; j<N; j++) {
-            float diff = (*(D+i*N+j))-(*(checkD+i*N+j));
-            checkError += diff*diff;
-        }
-    }
-    printf("checkError=%f\n", checkError);
+    // float checkError = 0.0;
+    // for (int i=0; i<M; i++) {
+    //     for (int j=0; j<N; j++) {
+    //         float diff = (*(D+i*N+j))-(*(checkD+i*N+j));
+    //         checkError += diff*diff;
+    //     }
+    // }
+    // printf("checkError=%f\n", checkError);
 
     // free(DT_D);
     // // free(di_even);
@@ -323,24 +369,30 @@ void SVD_internal(int M, int N, float* D, float** U, float** SIGMA, float** V_T)
 }
 
 void SVD(int M, int N, float* D, float** U, float** SIGMA, float** V_T) {
-    float* U1 = U_arr;
-    float* VT1 = VT_arr;
+    // float* U1 = U_arr;
+    // float* VT1 = VT_arr;
+    float* U1 = (float*) malloc(sizeof(float)*M*M);
+    float* VT1 = (float*) malloc(sizeof(float)*N*N);
     SVD_internal(M, N, D, &U1, SIGMA, &VT1);
     // U = (VT1)T, V_T = (U1)T
     transpose(*U, VT1, N, N);
     transpose(*V_T, U1, M, M);
+    free(U1);
+    free(VT1);
 }
 
 void PCA(int retention, int M, int N, float* D, float* U, float* SIGMA, float** D_HAT, int *K)
 {
     float totalEigenSum = 0.0;
     for (int i=0; i<N; i++) {
-        totalEigenSum += *(SIGMA+i);
+        float val = *(SIGMA+i);
+        totalEigenSum += val*val;
     }
 
     float eigenSum = 0.0;
     for (*K=0; *K<N; (*K)++) {
-        eigenSum += *(SIGMA+(*K));
+        float val = *(SIGMA+(*K));
+        eigenSum += val*val;
         float percent = eigenSum/totalEigenSum;
         if (percent >= retention/100.0) {
             (*K)++;
@@ -349,8 +401,8 @@ void PCA(int retention, int M, int N, float* D, float* U, float* SIGMA, float** 
     }
 
     // float* D_HAT_TEMP = (float*) calloc(M*(*K), sizeof(float));
-    // float* D_HAT_TEMP = (float*) malloc(sizeof(float)*M*(*K));
-    float* D_HAT_TEMP = D_HAT_ARR;
+    float* D_HAT_TEMP = (float*) malloc(sizeof(float)*M*(*K));
+    // float* D_HAT_TEMP = D_HAT_ARR;
 
     // D_HAT = D*W, W = U[:*K]
     for (int i=0; i<M; i++) {
@@ -363,7 +415,7 @@ void PCA(int retention, int M, int N, float* D, float* U, float* SIGMA, float** 
     }
 
     *D_HAT = D_HAT_TEMP;
-    printf("K=%d\n", *K);
-    printf("D_HAT\n");
-    printMat(*D_HAT, M, *K);
+    // printf("K=%d\n", *K);
+    // printf("D_HAT\n");
+    // printMat(*D_HAT, M, *K);
 }
